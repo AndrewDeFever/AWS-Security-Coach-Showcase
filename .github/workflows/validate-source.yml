@@ -195,3 +195,47 @@ jobs:
 
       - name: Verify connector CloudFormation package
         run: bash connector/verify-template.sh
+
+  validation-complete:
+    name: Validation Complete
+    if: ${{ always() }}
+    needs:
+      - source-gate
+      - frontend-build
+      - backend-validation
+      - connector-template
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Confirm validation outcomes
+        shell: bash
+        env:
+          SOURCE_GATE_RESULT: ${{ needs.source-gate.result }}
+          FRONTEND_RESULT: ${{ needs.frontend-build.result }}
+          BACKEND_RESULT: ${{ needs.backend-validation.result }}
+          CONNECTOR_RESULT: ${{ needs.connector-template.result }}
+        run: |
+          set -euo pipefail
+
+          test "$SOURCE_GATE_RESULT" = "success" || {
+            echo "Source gate result: $SOURCE_GATE_RESULT"
+            exit 1
+          }
+
+          for result in "$FRONTEND_RESULT" "$BACKEND_RESULT" "$CONNECTOR_RESULT"; do
+            case "$result" in
+              success|skipped)
+                ;;
+              *)
+                echo "Validation job result was not acceptable: $result"
+                exit 1
+                ;;
+            esac
+          done
+
+          printf 'Validation complete: source=%s frontend=%s backend=%s connector=%s\n' \
+            "$SOURCE_GATE_RESULT" \
+            "$FRONTEND_RESULT" \
+            "$BACKEND_RESULT" \
+            "$CONNECTOR_RESULT"
+

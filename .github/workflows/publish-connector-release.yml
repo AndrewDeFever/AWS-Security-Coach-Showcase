@@ -11,12 +11,6 @@ on:
         options:
           - dev
           - prod
-  push:
-    branches:
-      - dev
-    paths:
-      - "connector/releases/**"
-      - ".github/workflows/publish-connector-release.yml"
 
 permissions:
   id-token: write

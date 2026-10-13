@@ -23,13 +23,6 @@ on:
     paths:
       - "infra/connector-releases/**"
       - ".github/workflows/deploy-connector-release-infra.yml"
-  push:
-    branches:
-      - dev
-      - main
-    paths:
-      - "infra/connector-releases/**"
-      - ".github/workflows/deploy-connector-release-infra.yml"
 
 permissions:
   id-token: write
@@ -54,7 +47,7 @@ jobs:
         run: cfn-lint infra/connector-releases/template.yaml
 
   deploy:
-    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'deploy' }}
     needs: validate
     runs-on: ubuntu-latest
     environment: ${{ ((github.event_name == 'workflow_dispatch' && inputs.target_environment == 'prod') || (github.event_name == 'push' && github.ref_name == 'main')) && 'production' || 'development' }}

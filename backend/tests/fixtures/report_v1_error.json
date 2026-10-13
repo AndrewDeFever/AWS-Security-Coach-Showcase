@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "scan": {"scanId": "44444444-4444-4444-8444-444444444444", "status": "COMPLETE", "generatedAt": "2026-08-02T19:05:00Z"},
+  "target": {"type": "tool-account", "accountRef": "configured-account", "regionScope": ["us-east-1"]},
+  "ruleset": {"id": "aws-security-coach-core", "version": "1.0", "checkCount": 1},
+  "summary": {"total": 1, "passed": 0, "failed": 0, "warnings": 0, "errors": 1},
+  "findings": [{"id": "cloudtrail-multi-region", "title": "CloudTrail check could not be completed", "status": "ERROR", "severity": "LOW", "details": "The runner could not evaluate CloudTrail reliably."}]
+}

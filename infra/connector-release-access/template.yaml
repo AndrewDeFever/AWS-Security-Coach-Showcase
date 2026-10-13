@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Environment-scoped GitHub OIDC access role for AWS Security Coach connector release infrastructure.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    AllowedValues:
+      - dev
+      - prod
+
+  GitHubRepository:
+    Type: String
+    Default: example-org/aws-security-coach
+    AllowedPattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+    Description: GitHub repository owner/name allowed to assume the environment-scoped OIDC role.
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, dev]
+
+Resources:
+  ConnectorReleaseInfraRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !If
+        - IsDev
+        - GitHubOIDC-AwsSecurityCoach-ConnectorReleaseInfra-Dev
+        - GitHubOIDC-AwsSecurityCoach-ConnectorReleaseInfra-Prod
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !If
+                  - IsDev
+                  - !Sub 'repo:${GitHubRepository}:environment:development'
+                  - !Sub 'repo:${GitHubRepository}:environment:production'
+      Policies:
+        - PolicyName: !If
+            - IsDev
+            - GitHubOIDC-AwsSecurityCoach-ConnectorReleaseInfra-Dev-Policy
+            - GitHubOIDC-AwsSecurityCoach-ConnectorReleaseInfra-Prod-Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ManageConnectorReleaseStack
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:GetTemplateSummary
+                Resource: !If
+                  - IsDev
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aws-security-coach-connector-releases-example/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aws-security-coach-connector-releases-example-prod/*'
+              - !If
+                - IsDev
+                - Sid: ManageConnectorReleaseBucket
+                  Effect: Allow
+                  Action:
+                    - s3:CreateBucket
+                    - s3:DeleteBucket
+                    - s3:GetBucketLocation
+                    - s3:GetBucketPolicy
+                    - s3:PutBucketPolicy
+                    - s3:DeleteBucketPolicy
+                    - s3:GetBucketVersioning
+                    - s3:PutBucketVersioning
+                    - s3:GetBucketPublicAccessBlock
+                    - s3:PutBucketPublicAccessBlock
+                    - s3:GetBucketOwnershipControls
+                    - s3:PutBucketOwnershipControls
+                    - s3:GetEncryptionConfiguration
+                    - s3:PutEncryptionConfiguration
+                    - s3:GetLifecycleConfiguration
+                    - s3:PutLifecycleConfiguration
+                    - s3:GetBucketTagging
+                    - s3:PutBucketTagging
+                  Resource: arn:aws:s3:::aws-security-coach-connector-releases-example
+                - !Ref AWS::NoValue
+              - Sid: ManageConnectorReleasePublisherRole
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:GetRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:DeleteRole
+                  - iam:PutRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                Resource: !If
+                  - IsDev
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/GitHubOIDC-AwsSecurityCoach-ConnectorRelease-Dev'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/GitHubOIDC-AwsSecurityCoach-ConnectorRelease-Prod'
+      Tags:
+        - Key: Project
+          Value: AWSSafetyCoach
+        - Key: AccountRole
+          Value: Tool
+        - Key: Environment
+          Value: !If [IsDev, Dev, Prod]
+        - Key: Owner
+          Value: PortfolioUser
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Provisioned
+          Value: IaC
+        - Key: Purpose
+          Value: ConnectorReleaseInfrastructure
+
+Outputs:
+  ConnectorReleaseInfraRoleArn:
+    Description: Environment-scoped GitHub OIDC role used to deploy connector release infrastructure.
+    Value: !GetAtt ConnectorReleaseInfraRole.Arn

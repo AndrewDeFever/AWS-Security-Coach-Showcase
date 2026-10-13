@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0",
+  "scan": {
+    "scanId": "11111111-1111-4111-8111-111111111111",
+    "status": "COMPLETE",
+    "generatedAt": "2026-08-02T19:02:41Z"
+  },
+  "target": {
+    "type": "tool-account",
+    "accountRef": "configured-account",
+    "regionScope": ["us-east-1"]
+  },
+  "ruleset": {
+    "id": "aws-security-coach-core",
+    "version": "1.0",
+    "checkCount": 2
+  },
+  "summary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "warnings": 0,
+    "errors": 0
+  },
+  "findings": [
+    {
+      "id": "iam-root-mfa-enabled",
+      "title": "Root account MFA is enabled",
+      "status": "PASS",
+      "severity": "INFO",
+      "details": "Root account MFA is enabled for the tool account."
+    },
+    {
+      "id": "s3-account-public-access-block",
+      "title": "Account-level S3 Block Public Access is enabled",
+      "status": "PASS",
+      "severity": "INFO",
+      "details": "All account-level S3 Block Public Access settings are enabled."
+    }
+  ]
+}

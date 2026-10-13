@@ -1,0 +1,54 @@
+.management-observed {
+  margin: 10px 0 12px;
+  color: #526075;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.management-observed strong {
+  color: #334155;
+}
+
+.management-impact {
+  margin: 12px 0 14px;
+  padding: 14px 16px;
+  border-left: 4px solid #f59e0b;
+  border-radius: 0 10px 10px 0;
+  background: #fffbeb;
+}
+
+.management-impact > strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #92400e;
+  font-size: 0.8rem;
+  font-weight: 850;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.management-impact p {
+  margin: 0;
+  color: #5f4b32;
+}
+
+.management-action-reference {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  color: #1d4ed8;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.management-action-reference:hover {
+  text-decoration: underline;
+}
+
+/* Keep the canonical Well-Architected disclaimer as one sentence in screen and print rendering. */
+.management-disclaimer strong {
+  display: inline !important;
+  white-space: normal;
+}

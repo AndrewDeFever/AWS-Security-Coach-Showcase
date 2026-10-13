@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  AWS Security Coach workload-account connector version 1.0.0. Creates one bounded
+  read-only IAM role for the existing nine-check baseline.
+
+Metadata:
+  AWSSecurityCoach:
+    ConnectorTemplateVersion: '1.0.0'
+
+Parameters:
+  TrustedScannerRoleArn:
+    Type: String
+    Description: Exact environment-specific AWS Security Coach scanner role ARN.
+    AllowedPattern: '^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$'
+    ConstraintDescription: Must be a valid IAM role ARN.
+
+  ExternalId:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    MaxLength: 256
+    AllowedPattern: '^[A-Za-z0-9+=,.@:/_-]+$'
+    Description: Unique connector-specific ExternalId supplied by AWS Security Coach.
+
+  HomeRegion:
+    Type: String
+    Default: us-east-1
+    AllowedValues:
+      - us-east-1
+    Description: Regional boundary for the security-group check.
+
+Resources:
+  AWSSecurityCoachReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /aws-security-coach/
+      Description: Read-only workload-account role for the AWS Security Coach nine-check baseline.
+      MaxSessionDuration: 3600
+      Tags:
+        - Key: AWSSecurityCoachConnector
+          Value: 'true'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowExactSecurityCoachScanner
+            Effect: Allow
+            Principal:
+              AWS: !Ref TrustedScannerRoleArn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
+      Policies:
+        - PolicyName: aws-security-coach-nine-check-read-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadIamAccountPosture
+                Effect: Allow
+                Action:
+                  - iam:GenerateCredentialReport
+                  - iam:GetCredentialReport
+                  - iam:GetAccountSummary
+                  - iam:ListUsers
+                  - iam:ListMFADevices
+                  - iam:GetAccountPasswordPolicy
+                Resource: '*'
+
+              - Sid: ReadCloudTrailPosture
+                Effect: Allow
+                Action:
+                  - cloudtrail:DescribeTrails
+                Resource: '*'
+
+              - Sid: ReadS3AccountPublicAccessConfiguration
+                Effect: Allow
+                Action:
+                  - s3:GetAccountPublicAccessBlock
+                Resource: '*'
+
+              - Sid: ReadHomeRegionSecurityGroups
+                Effect: Allow
+                Action:
+                  - ec2:DescribeSecurityGroups
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    ec2:Region: !Ref HomeRegion
+
+Outputs:
+  ConnectorRoleArn:
+    Description: ARN to register with AWS Security Coach after verification.
+    Value: !GetAtt AWSSecurityCoachReadOnlyRole.Arn
+
+  ConnectorRoleName:
+    Description: CloudFormation-generated workload-account connector role name.
+    Value: !Ref AWSSecurityCoachReadOnlyRole
+
+  HomeRegion:
+    Description: Regional coverage boundary for this connector package.
+    Value: !Ref HomeRegion
+
+  ConnectorTemplateVersion:
+    Description: Exact AWS Security Coach connector template version installed by this stack.
+    Value: '1.0.0'

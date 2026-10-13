@@ -1,0 +1,120 @@
+name: Deploy Backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose validate to build/check only, or deploy to create/update the backend stack for this branch."
+        required: true
+        default: "validate"
+        type: choice
+        options:
+          - validate
+          - deploy
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+    env:
+      BACKEND_ENVIRONMENT_NAME: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Require supported deployment branch
+        if: ${{ github.event.inputs.action == 'deploy' }}
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_name }}" != "dev" && "${{ github.ref_name }}" != "main" ]]; then
+            echo "Backend deployment is only supported from dev or main. Unsupported branch: ${{ github.ref_name }}"
+            exit 1
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Setup AWS SAM CLI
+        uses: aws-actions/setup-sam@v3
+
+      - name: Validate authoritative stack-managed Cognito SAM template
+        run: python scripts/prepare_jwt_template.py
+
+      - name: Validate SAM template
+        run: sam validate --lint --template-file template.generated.yaml
+
+      - name: Build SAM application
+        run: sam build --template-file template.generated.yaml
+
+      - name: Configure AWS credentials
+        if: ${{ github.event.inputs.action == 'deploy' }}
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.BACKEND_AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Deploy backend stack
+        if: ${{ github.event.inputs.action == 'deploy' }}
+        run: |
+          parameter_overrides=(
+            "EnvironmentName=$BACKEND_ENVIRONMENT_NAME"
+          )
+
+          if [[ "$BACKEND_ENVIRONMENT_NAME" == "dev" ]]; then
+            admission_cooldown_seconds=60
+            tag_environment=Dev
+          else
+            admission_cooldown_seconds=300
+            tag_environment=Prod
+          fi
+
+          parameter_overrides+=("AdmissionCooldownSeconds=$admission_cooldown_seconds")
+
+          stack_tags=(
+            "Project=AWSSafetyCoach"
+            "AccountRole=Tool"
+            "Environment=$tag_environment"
+            "Owner=PortfolioUser"
+            "ManagedBy=Console"
+            "Provisioned=IaC"
+            "Purpose=Learning"
+          )
+
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "${{ vars.BACKEND_STACK_NAME }}" \
+            --region us-east-1 \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides "${parameter_overrides[@]}" \
+            --tags "${stack_tags[@]}"
+
+      - name: Reconcile Cognito Managed Login branding
+        if: ${{ github.event.inputs.action == 'deploy' }}
+        run: bash scripts/apply_managed_login_branding.sh "${{ vars.BACKEND_STACK_NAME }}"
+
+      - name: Show stack outputs
+        if: ${{ github.event.inputs.action == 'deploy' }}
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name "${{ vars.BACKEND_STACK_NAME }}" \
+            --query "Stacks[0].Outputs" \
+            --output table

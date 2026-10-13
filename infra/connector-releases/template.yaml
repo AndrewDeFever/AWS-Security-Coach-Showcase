@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS Security Coach connector release distribution infrastructure.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+
+  ApplicationKmsKeyArn:
+    Type: String
+    Default: arn:aws:kms:us-east-1:123456789012:key/00000000-0000-4000-8000-000000000000
+    AllowedPattern: '^arn:aws:kms:us-east-1:[0-9]{12}:key/[A-Fa-f0-9-]{36}$'
+    ConstraintDescription: Must be the AWS Security Coach us-east-1 customer-managed KMS key ARN.
+
+  ConnectorReleaseBucketName:
+    Type: String
+    Default: aws-security-coach-connector-releases-example
+
+  GitHubRepository:
+    Type: String
+    Default: example-org/aws-security-coach
+    AllowedPattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+    Description: GitHub repository owner/name allowed to publish connector releases.
+
+Conditions:
+  IsDev: !Equals [!Ref EnvironmentName, dev]
+  IsProd: !Equals [!Ref EnvironmentName, prod]
+
+Resources:
+  ConnectorReleaseBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsDev
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref ConnectorReleaseBucketName
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref ApplicationKmsKeyArn
+            BucketKeyEnabled: true
+            BlockedEncryptionTypes:
+              EncryptionType:
+                - SSE-C
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      Tags:
+        - Key: Project
+          Value: AWSSafetyCoach
+        - Key: AccountRole
+          Value: Tool
+        - Key: Environment
+          Value: Shared
+        - Key: Owner
+          Value: PortfolioUser
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Provisioned
+          Value: IaC
+        - Key: Purpose
+          Value: ConnectorReleaseDistribution
+
+  ConnectorReleaseBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: IsDev
+    Properties:
+      Bucket: !Ref ConnectorReleaseBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !Sub '${ConnectorReleaseBucket.Arn}'
+              - !Sub '${ConnectorReleaseBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  DevConnectorReleasePublisherRole:
+    Type: AWS::IAM::Role
+    Condition: IsDev
+    Properties:
+      RoleName: GitHubOIDC-AwsSecurityCoach-ConnectorRelease-Dev
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubRepository}:environment:development'
+      Policies:
+        - PolicyName: PublishDevConnectorReleases
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ListDevReleasePrefix
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ConnectorReleaseBucketName}'
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - dev/*
+              - Sid: ReadWriteDevReleaseObjects
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ConnectorReleaseBucketName}/dev/*'
+              - Sid: UseReleaseKmsKeyThroughS3
+                Effect: Allow
+                Action:
+                  - kms:GenerateDataKey
+                  - kms:Decrypt
+                Resource: !Ref ApplicationKmsKeyArn
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 's3.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Project
+          Value: AWSSafetyCoach
+        - Key: AccountRole
+          Value: Tool
+        - Key: Environment
+          Value: Dev
+        - Key: Owner
+          Value: PortfolioUser
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Provisioned
+          Value: IaC
+        - Key: Purpose
+          Value: ConnectorReleasePublication
+
+  ProdConnectorReleasePublisherRole:
+    Type: AWS::IAM::Role
+    Condition: IsProd
+    Properties:
+      RoleName: GitHubOIDC-AwsSecurityCoach-ConnectorRelease-Prod
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubRepository}:environment:production'
+      Policies:
+        - PolicyName: PublishProdConnectorReleases
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ListProdReleasePrefix
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ConnectorReleaseBucketName}'
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - prod/*
+              - Sid: ReadWriteProdReleaseObjects
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ConnectorReleaseBucketName}/prod/*'
+              - Sid: UseReleaseKmsKeyThroughS3
+                Effect: Allow
+                Action:
+                  - kms:GenerateDataKey
+                  - kms:Decrypt
+                Resource: !Ref ApplicationKmsKeyArn
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 's3.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Project
+          Value: AWSSafetyCoach
+        - Key: AccountRole
+          Value: Tool
+        - Key: Environment
+          Value: Prod
+        - Key: Owner
+          Value: PortfolioUser
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Provisioned
+          Value: IaC
+        - Key: Purpose
+          Value: ConnectorReleasePublication
+
+Outputs:
+  ConnectorReleaseBucketName:
+    Condition: IsDev
+    Description: Shared private connector release distribution bucket.
+    Value: !Ref ConnectorReleaseBucket
+
+  DevConnectorReleasePublisherRoleArn:
+    Condition: IsDev
+    Description: Development GitHub OIDC role for immutable connector release publication.
+    Value: !GetAtt DevConnectorReleasePublisherRole.Arn
+
+  ProdConnectorReleasePublisherRoleArn:
+    Condition: IsProd
+    Description: Production GitHub OIDC role for immutable connector release publication.
+    Value: !GetAtt ProdConnectorReleasePublisherRole.Arn

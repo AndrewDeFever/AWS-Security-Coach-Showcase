@@ -1,0 +1,87 @@
+.topbar {
+  align-items: flex-start;
+  gap: 28px;
+}
+
+.topbar-brand {
+  flex: 1 1 520px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.topbar-brand:hover .topbar-title {
+  color: #fff;
+}
+
+.topbar-actions {
+  justify-content: flex-end;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.topbar-actions .button-inline {
+  white-space: nowrap;
+}
+
+.topbar-scan-action {
+  flex: 0 0 auto;
+}
+
+.identity-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.profile-menu-connector {
+  margin-bottom: 8px;
+}
+
+.profile-menu-connector .connector-manager-trigger,
+.profile-menu-connector .managed-assessment-trigger,
+.profile-menu-signout {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+}
+
+.profile-menu-connector .managed-assessment-trigger {
+  padding-left: 10px;
+  padding-right: 10px;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.profile-menu-connector .managed-assessment-trigger .button-inline {
+  max-width: 100%;
+  gap: 6px;
+}
+
+@media (max-width: 960px) {
+  .topbar-brand {
+    flex-basis: auto;
+  }
+
+  .topbar-actions,
+  .identity-controls {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar-actions,
+  .identity-controls {
+    width: 100%;
+  }
+
+  .topbar-actions > .button-primary,
+  .identity-controls > .button-primary,
+  .identity-controls > .button-secondary,
+  .identity-controls > .connector-onboarding-trigger {
+    flex: 1 1 auto;
+  }
+}

@@ -1,0 +1,108 @@
+name: Deploy Connector Release Access
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Connector release access target environment
+        required: true
+        type: choice
+        default: dev
+        options:
+          - dev
+          - prod
+  pull_request:
+    paths:
+      - "infra/connector-release-access/**"
+      - ".github/workflows/deploy-connector-release-access.yml"
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - "infra/connector-release-access/**"
+      - ".github/workflows/deploy-connector-release-access.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint connector release access infrastructure
+        run: cfn-lint infra/connector-release-access/template.yaml
+
+  deploy:
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ ((github.event_name == 'workflow_dispatch' && inputs.target_environment == 'prod') || (github.event_name == 'push' && github.ref_name == 'main')) && 'production' || 'development' }}
+    env:
+      TARGET_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || (github.ref_name == 'main' && 'prod' || 'dev') }}
+    steps:
+      - name: Require matching branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$TARGET_ENVIRONMENT" == "dev" ]]; then
+            test "${{ github.ref_name }}" = "dev" || {
+              echo "Development connector release access must deploy from dev."
+              exit 1
+            }
+          else
+            test "${{ github.ref_name }}" = "main" || {
+              echo "Production connector release access must deploy from main."
+              exit 1
+            }
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.BACKEND_AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Deploy connector release access role
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --template-file infra/connector-release-access/template.yaml \
+            --stack-name "aws-safety-coach-${TARGET_ENVIRONMENT}-connector-release-access" \
+            --parameter-overrides \
+              EnvironmentName="$TARGET_ENVIRONMENT" \
+              GitHubRepository="$GITHUB_REPOSITORY" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --tags \
+              Project=AWSSafetyCoach \
+              AccountRole=Tool \
+              Environment="$TARGET_ENVIRONMENT" \
+              Owner=PortfolioUser \
+              ManagedBy=CloudFormation \
+              Provisioned=IaC \
+              Purpose=ConnectorReleaseInfrastructure
+
+      - name: Show connector release access role ARN
+        shell: bash
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name "aws-safety-coach-${TARGET_ENVIRONMENT}-connector-release-access" \
+            --query "Stacks[0].Outputs[?OutputKey=='ConnectorReleaseInfraRoleArn'].OutputValue" \
+            --output text

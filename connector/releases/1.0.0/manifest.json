@@ -1,0 +1,8 @@
+{
+  "releaseType": "aws-security-coach-workload-connector",
+  "templateVersion": "1.0.0",
+  "connectorVersion": "1.0",
+  "artifact": "template.yaml",
+  "homeRegion": "us-east-1",
+  "immutability": "published-release-do-not-modify"
+}

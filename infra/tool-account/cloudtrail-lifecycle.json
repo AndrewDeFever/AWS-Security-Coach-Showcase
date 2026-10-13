@@ -1,0 +1,14 @@
+{
+  "Rules": [
+    {
+      "ID": "ExpireCloudTrailLogsAfter365Days",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": ""
+      },
+      "Expiration": {
+        "Days": 365
+      }
+    }
+  ]
+}

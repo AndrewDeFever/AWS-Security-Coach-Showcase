@@ -1,0 +1,495 @@
+.management-report {
+  margin: 0;
+  padding: 38px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 18px;
+  background: #ffffff;
+  color: #172033;
+  box-shadow: 0 18px 45px rgba(2, 6, 23, 0.2);
+}
+
+.management-report h2,
+.management-report h3,
+.management-report h4,
+.management-report p {
+  margin-top: 0;
+}
+
+.management-report-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  padding-bottom: 28px;
+  border-bottom: 2px solid #dbe4ef;
+}
+
+.management-eyebrow,
+.management-section-kicker {
+  display: block;
+  margin-bottom: 7px;
+  color: #2563eb;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.management-report-header h2 {
+  margin-bottom: 8px;
+  color: #0f172a;
+  font-size: clamp(1.75rem, 4vw, 2.45rem);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.management-target {
+  margin-bottom: 0;
+  color: #526075;
+  font-size: 0.98rem;
+}
+
+.management-target strong {
+  color: #172033;
+}
+
+.management-identity {
+  display: grid;
+  grid-template-columns: auto;
+  min-width: 190px;
+  padding: 16px 18px;
+  border: 1px solid #dbe4ef;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.management-identity span {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.management-identity span:first-child {
+  margin-top: 0;
+}
+
+.management-identity strong {
+  margin-top: 2px;
+  color: #0f172a;
+  font-size: 0.88rem;
+}
+
+.management-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
+  gap: 18px;
+  padding: 30px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.management-overview-main,
+.management-overview-state {
+  min-height: 138px;
+  border-radius: 14px;
+}
+
+.management-overview-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 24px 28px;
+  background: linear-gradient(135deg, #0f172a, #1e3a8a);
+  color: #ffffff;
+}
+
+.management-overview-number {
+  font-size: clamp(2.2rem, 6vw, 3.45rem);
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.management-overview-label {
+  margin-top: 8px;
+  color: #dbeafe;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.management-overview-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px;
+  border: 1px solid;
+}
+
+.management-overview-state.clean {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.management-overview-state.attention {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.management-overview-state svg {
+  flex: 0 0 auto;
+}
+
+.management-overview-state strong,
+.management-overview-state span {
+  display: block;
+}
+
+.management-overview-state strong {
+  margin-bottom: 5px;
+  color: #172033;
+  font-size: 0.98rem;
+}
+
+.management-overview-state span {
+  color: #64748b;
+  font-size: 0.87rem;
+  line-height: 1.45;
+}
+
+.management-section {
+  padding: 30px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.management-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.management-section-heading h3,
+.management-disposition h3 {
+  margin-bottom: 0;
+  color: #0f172a;
+  font-size: 1.28rem;
+  letter-spacing: -0.02em;
+}
+
+.management-section-note {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.management-actions {
+  display: grid;
+  gap: 14px;
+}
+
+.management-action {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid #dbe4ef;
+  border-radius: 13px;
+  background: #fbfdff;
+}
+
+.management-action-index {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e8eef8;
+  color: #334155;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.management-action-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+}
+
+.management-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.67rem;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.management-severity-critical {
+  background: #7f1d1d;
+  color: #ffffff;
+}
+
+.management-severity-high {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.management-severity-medium {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.management-severity-low {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.management-severity-info {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.management-effort {
+  background: #eef2f7;
+  color: #475569;
+}
+
+.management-area-label {
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.management-action h4 {
+  margin-bottom: 7px;
+  color: #172033;
+  font-size: 1rem;
+}
+
+.management-action p,
+.management-recommendation,
+.management-methodology p,
+.management-disposition p {
+  color: #526075;
+  font-size: 0.88rem;
+  line-height: 1.58;
+}
+
+.management-action p {
+  margin-bottom: 10px;
+}
+
+.management-recommendation {
+  padding-top: 10px;
+  border-top: 1px solid #e8edf4;
+}
+
+.management-recommendation strong {
+  color: #334155;
+}
+
+.management-clean-callout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 20px;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  background: #f0fdf4;
+  color: #166534;
+  font-weight: 700;
+}
+
+.management-area-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.management-area-card {
+  padding: 18px;
+  border: 1px solid #dbe4ef;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.management-area-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #172033;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.management-area-title svg {
+  color: #2563eb;
+}
+
+.management-area-count {
+  margin-top: 15px;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.management-area-count strong {
+  color: #172033;
+  font-size: 1.18rem;
+}
+
+.management-area-state {
+  margin-top: 7px;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.management-area-state.clean {
+  color: #15803d;
+}
+
+.management-area-state.attention {
+  color: #c2410c;
+}
+
+.management-confirmed-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.management-confirmed-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 0;
+  color: #334155;
+  font-size: 0.84rem;
+  line-height: 1.42;
+}
+
+.management-confirmed-item svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #16a34a;
+}
+
+.management-scope-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.management-scope-grid > div {
+  padding: 13px 14px;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.management-scope-grid span,
+.management-scope-grid strong {
+  display: block;
+}
+
+.management-scope-grid span {
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 0.69rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.management-scope-grid strong {
+  color: #172033;
+  font-size: 0.83rem;
+}
+
+.management-methodology p:last-of-type {
+  margin-bottom: 18px;
+}
+
+.management-disclaimer {
+  padding: 16px 18px;
+  border-left: 4px solid #2563eb;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.94rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.management-disclaimer strong {
+  color: #0f172a;
+  font-size: 1.03em;
+  font-weight: 900;
+}
+
+.management-disposition {
+  padding: 30px 0 10px;
+}
+
+.management-disposition p {
+  max-width: 780px;
+  margin: 10px 0 0;
+}
+
+.management-reassessment {
+  font-weight: 650;
+}
+
+.management-framework-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 18px;
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.management-framework-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 760px) {
+  .management-report {
+    padding: 24px 20px;
+  }
+
+  .management-report-header,
+  .management-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .management-identity {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .management-overview,
+  .management-area-grid,
+  .management-confirmed-grid,
+  .management-scope-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .management-action {
+    grid-template-columns: 34px minmax(0, 1fr);
+    padding: 16px;
+  }
+}

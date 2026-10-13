@@ -1,0 +1,155 @@
+.scan-report-page {
+  min-height: calc(100vh - 72px);
+  padding: 28px;
+  background: #e9eef5;
+}
+
+.scan-report-toolbar {
+  display: flex;
+  max-width: 1180px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 auto 18px;
+}
+
+.scan-report-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #1e3a5f;
+  font-size: 0.86rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.scan-report-back:hover { text-decoration: underline; }
+
+.scan-report-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.scan-report-route-id {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.scan-report-download {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border: 1px solid #1d4ed8;
+  border-radius: 9px;
+  background: #2563eb;
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 15px rgba(37, 99, 235, 0.18);
+}
+
+.scan-report-download:hover { background: #1d4ed8; }
+.scan-report-download:focus-visible { outline: 3px solid rgba(37, 99, 235, 0.25); outline-offset: 2px; }
+
+.scan-report-download-error {
+  max-width: 1180px;
+  margin: -8px auto 16px;
+  padding: 9px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #991b1b;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.scan-report-page .management-report,
+.scan-report-page .engineering-report,
+.scan-report-page .subscriber-report {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.scan-report-state {
+  display: flex;
+  max-width: 760px;
+  min-height: 240px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  margin: 50px auto;
+  padding: 34px;
+  border: 1px solid #d7e0ea;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #334155;
+  text-align: center;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.12);
+}
+
+.scan-report-state strong { color: #0f172a; font-size: 1.08rem; }
+.scan-report-state span { max-width: 560px; color: #64748b; font-size: 0.9rem; line-height: 1.55; }
+.scan-report-state .button-primary { margin-top: 8px; }
+.scan-report-error svg { color: #b45309; }
+
+@media (max-width: 760px) {
+  .scan-report-page { padding: 18px 10px; }
+  .scan-report-toolbar { padding: 0 6px; }
+  .scan-report-toolbar-actions { gap: 8px; }
+  .scan-report-route-id { display: none; }
+}
+
+@media print {
+  .scan-report-page {
+    min-height: 0;
+    padding: 0;
+    background: #ffffff;
+  }
+
+  .scan-report-toolbar,
+  .scan-report-download-error,
+  .site-footer {
+    display: none !important;
+  }
+
+  .scan-report-page .management-report,
+  .scan-report-page .engineering-report,
+  .scan-report-page .subscriber-report {
+    max-width: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .managed-engineering-report .engineering-print-page-start,
+  .subscriber-engineering-report .engineering-print-page-start,
+  .engineering-report .engineering-appendix-page {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .engineering-report .engineering-keep-together,
+  .engineering-report .engineering-finding-header,
+  .engineering-report .engineering-context-card,
+  .engineering-report .engineering-target,
+  .engineering-report .engineering-evaluation-warning,
+  .engineering-report .engineering-passed-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .engineering-report .engineering-cli code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}

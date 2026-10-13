@@ -1,0 +1,16 @@
+{
+  "scanId": "55555555-5555-4555-8555-555555555555",
+  "status": "COMPLETE",
+  "generatedAt": "2026-07-22T23:28:36Z",
+  "targetType": "tool-account",
+  "summary": {"total": 1, "passed": 1, "failed": 0, "warnings": 0, "errors": 0},
+  "findings": [
+    {
+      "id": "iam-root-mfa-enabled",
+      "title": "Root account MFA is enabled",
+      "severity": "INFO",
+      "status": "PASS",
+      "details": "Root account MFA is enabled for the tool account."
+    }
+  ]
+}

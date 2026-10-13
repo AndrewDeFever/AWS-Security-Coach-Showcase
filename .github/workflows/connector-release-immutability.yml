@@ -1,0 +1,54 @@
+name: Connector Release Immutability
+
+on:
+  pull_request:
+    paths:
+      - 'connector/releases/**'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'connector/releases/**'
+
+permissions:
+  contents: read
+
+jobs:
+  immutable-releases:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Reject mutation of published connector releases
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${BASE_SHA}" || "${BASE_SHA}" =~ ^0+$ ]]; then
+            echo "No prior revision is available; nothing published can be mutated."
+            exit 0
+          fi
+
+          git diff --name-status "${BASE_SHA}" "${GITHUB_SHA}" -- connector/releases/ > /tmp/connector-release-diff.txt
+          cat /tmp/connector-release-diff.txt
+
+          while IFS=$'\t' read -r status path extra; do
+            [[ -z "${status}" ]] && continue
+
+            if [[ "${status}" != A* ]]; then
+              echo "Published connector release files are immutable: ${status} ${path}"
+              exit 1
+            fi
+
+            version="$(cut -d/ -f3 <<<"${path}")"
+            if git cat-file -e "${BASE_SHA}:connector/releases/${version}" 2>/dev/null; then
+              echo "Cannot add files to an already published connector release: ${version}"
+              exit 1
+            fi
+          done < /tmp/connector-release-diff.txt

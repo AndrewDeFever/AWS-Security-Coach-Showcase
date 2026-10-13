@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "scan": {"scanId": "22222222-2222-4222-8222-222222222222", "status": "COMPLETE", "generatedAt": "2026-08-02T19:03:00Z"},
+  "target": {"type": "tool-account", "accountRef": "configured-account", "regionScope": ["us-east-1"]},
+  "ruleset": {"id": "aws-security-coach-core", "version": "1.0", "checkCount": 1},
+  "summary": {"total": 1, "passed": 0, "failed": 1, "warnings": 0, "errors": 0},
+  "findings": [{"id": "iam-users-mfa", "title": "IAM users without MFA were found", "status": "FAIL", "severity": "MEDIUM", "details": "One IAM user does not have MFA enabled."}]
+}

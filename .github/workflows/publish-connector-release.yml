@@ -1,0 +1,156 @@
+name: Publish Connector Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Connector release target environment
+        required: true
+        type: choice
+        default: dev
+        options:
+          - dev
+          - prod
+  push:
+    branches:
+      - dev
+    paths:
+      - "connector/releases/**"
+      - ".github/workflows/publish-connector-release.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: connector-release-${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment == 'prod' && 'production' || 'development' }}
+    env:
+      CONNECTOR_RELEASE_BUCKET: aws-security-coach-connector-releases-example
+      CONNECTOR_RELEASE_PREFIX: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || 'dev' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate release publisher configuration
+        env:
+          CONNECTOR_RELEASE_AWS_ROLE_ARN: ${{ vars.CONNECTOR_RELEASE_AWS_ROLE_ARN }}
+        run: |
+          test -n "$CONNECTOR_RELEASE_AWS_ROLE_ARN" || {
+            echo "CONNECTOR_RELEASE_AWS_ROLE_ARN is required in the selected GitHub Environment."
+            exit 1
+          }
+
+          if [[ "$CONNECTOR_RELEASE_PREFIX" == "prod" && "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            echo "Production connector releases are manual-only."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.CONNECTOR_RELEASE_AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Validate connector release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          release_dirs=(connector/releases/*)
+          test ${#release_dirs[@]} -gt 0 || {
+            echo "No connector releases found."
+            exit 1
+          }
+
+          for release_dir in "${release_dirs[@]}"; do
+            version="$(basename "$release_dir")"
+            manifest="$release_dir/manifest.json"
+            template="$release_dir/template.yaml"
+
+            test -f "$manifest" || {
+              echo "Missing release manifest: $manifest"
+              exit 1
+            }
+            test -f "$template" || {
+              echo "Missing release template: $template"
+              exit 1
+            }
+
+            manifest_version="$(jq -r '.templateVersion // empty' "$manifest")"
+            artifact="$(jq -r '.artifact // empty' "$manifest")"
+
+            [[ "$manifest_version" == "$version" ]] || {
+              echo "Manifest templateVersion '$manifest_version' does not match release directory '$version'."
+              exit 1
+            }
+            [[ "$artifact" == "template.yaml" ]] || {
+              echo "Release '$version' manifest artifact must be template.yaml."
+              exit 1
+            }
+
+            echo "Validated release $version template sha256=$(sha256sum "$template" | awk '{print $1}')"
+            echo "Validated release $version manifest sha256=$(sha256sum "$manifest" | awk '{print $1}')"
+          done
+
+      - name: Publish releases without allowing mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          publish_immutable() {
+            local source_path="$1"
+            local object_key="$2"
+            local existing_path
+            local source_sha256
+            source_sha256="$(sha256sum "$source_path" | awk '{print $1}')"
+            existing_path="$(mktemp)"
+
+            if aws s3api head-object --bucket "$CONNECTOR_RELEASE_BUCKET" --key "$object_key" >/dev/null 2>&1; then
+              aws s3 cp "s3://${CONNECTOR_RELEASE_BUCKET}/${object_key}" "$existing_path" --only-show-errors
+
+              if cmp -s "$source_path" "$existing_path"; then
+                echo "Already published and byte-identical: s3://${CONNECTOR_RELEASE_BUCKET}/${object_key} sha256=${source_sha256}"
+                rm -f "$existing_path"
+                return 0
+              fi
+
+              echo "Refusing to overwrite non-identical published release object: s3://${CONNECTOR_RELEASE_BUCKET}/${object_key}"
+              rm -f "$existing_path"
+              return 1
+            fi
+
+            rm -f "$existing_path"
+            aws s3 cp "$source_path" "s3://${CONNECTOR_RELEASE_BUCKET}/${object_key}" \
+              --checksum-algorithm SHA256 \
+              --only-show-errors
+
+            verify_path="$(mktemp)"
+            aws s3 cp "s3://${CONNECTOR_RELEASE_BUCKET}/${object_key}" "$verify_path" --only-show-errors
+            cmp -s "$source_path" "$verify_path" || {
+              echo "Published object byte verification failed: s3://${CONNECTOR_RELEASE_BUCKET}/${object_key}"
+              rm -f "$verify_path"
+              return 1
+            }
+
+            verify_sha256="$(sha256sum "$verify_path" | awk '{print $1}')"
+            rm -f "$verify_path"
+            [[ "$verify_sha256" == "$source_sha256" ]] || {
+              echo "Published object sha256 verification failed: s3://${CONNECTOR_RELEASE_BUCKET}/${object_key}"
+              return 1
+            }
+            echo "Published and verified: s3://${CONNECTOR_RELEASE_BUCKET}/${object_key} sha256=${source_sha256}"
+          }
+
+          for release_dir in connector/releases/*; do
+            version="$(basename "$release_dir")"
+            publish_immutable "$release_dir/template.yaml" "${CONNECTOR_RELEASE_PREFIX}/${version}/template.yaml"
+            publish_immutable "$release_dir/manifest.json" "${CONNECTOR_RELEASE_PREFIX}/${version}/manifest.json"
+          done

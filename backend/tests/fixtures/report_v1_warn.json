@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "scan": {"scanId": "33333333-3333-4333-8333-333333333333", "status": "COMPLETE", "generatedAt": "2026-08-02T19:04:00Z"},
+  "target": {"type": "tool-account", "accountRef": "configured-account", "regionScope": ["us-east-1"]},
+  "ruleset": {"id": "aws-security-coach-core", "version": "1.0", "checkCount": 1},
+  "summary": {"total": 1, "passed": 0, "failed": 0, "warnings": 1, "errors": 0},
+  "findings": [{"id": "example-partial-evaluation", "title": "Evaluation completed with limitations", "status": "WARN", "severity": "LOW", "details": "The evaluation was bounded and did not inspect every possible resource."}]
+}

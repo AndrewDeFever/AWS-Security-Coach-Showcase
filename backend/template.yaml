@@ -1,0 +1,757 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AWS Security Coach backend environment-aware SAM template.
+
+# AUTHORITATIVE BACKEND TEMPLATE.
+# This template manages separate development and production backend resources.
+# Deploy through the matching GitHub Environment so variables, secrets, and AWS
+# OIDC roles remain isolated by environment.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+
+  ProjectName:
+    Type: String
+    Default: aws-safety-coach
+
+  HomeRegion:
+    Type: String
+    Default: us-east-1
+
+  ApplicationKmsKeyArn:
+    Type: String
+    Default: arn:aws:kms:us-east-1:123456789012:key/00000000-0000-4000-8000-000000000000
+    AllowedPattern: '^arn:aws:kms:us-east-1:[0-9]{12}:key/[A-Fa-f0-9-]{36}$'
+    ConstraintDescription: Must be a valid us-east-1 KMS key ARN.
+    Description: Shared AWS Security Coach customer-managed KMS key ARN; consumers receive only workload-specific KMS permissions.
+
+  ConnectorReleaseBucketName:
+    Type: String
+    Default: aws-security-coach-connector-releases-example
+    Description: Replace with the private S3 bucket used to distribute immutable connector releases.
+
+  AdmissionCooldownSeconds:
+    Type: Number
+    Default: 300
+    MinValue: 60
+    MaxValue: 3600
+
+  AdmissionLeaseSeconds:
+    Type: Number
+    Default: 900
+    MinValue: 300
+    MaxValue: 3600
+
+  ReportsPrefix:
+    Type: String
+    Default: reports/
+
+  RulesPrefix:
+    Type: String
+    Default: rules/
+
+Mappings:
+  EnvironmentConfig:
+    dev:
+      CorsOrigin: https://dev.example.invalid
+      CallbackUrl: https://dev.example.invalid/auth/callback
+      LogoutUrl: https://dev.example.invalid/
+    prod:
+      CorsOrigin: https://prod.example.invalid
+      CallbackUrl: https://prod.example.invalid/auth/callback
+      LogoutUrl: https://prod.example.invalid/
+
+Globals:
+  Function:
+    Runtime: python3.14
+    Architectures:
+      - x86_64
+    Handler: lambda_function.lambda_handler
+    MemorySize: 128
+    Timeout: 10
+    Environment:
+      Variables:
+        SCANS_TABLE: !Ref ScansTable
+
+Resources:
+  StackCognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${ProjectName}-${EnvironmentName}-operators'
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      MfaConfiguration: 'OFF'
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 7
+
+  StackCognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${ProjectName}-${EnvironmentName}-web'
+      UserPoolId: !Ref StackCognitoUserPool
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - !FindInMap [EnvironmentConfig, !Ref EnvironmentName, CallbackUrl]
+      LogoutURLs:
+        - !FindInMap [EnvironmentConfig, !Ref EnvironmentName, LogoutUrl]
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 1
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+  StackCognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub 'security-coach-${EnvironmentName}-operators'
+      UserPoolId: !Ref StackCognitoUserPool
+      ManagedLoginVersion: 2
+
+  StackCognitoOperatorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: operator
+      Description: Platform operators permitted to run tool-account scans and all configured connector scans.
+      UserPoolId: !Ref StackCognitoUserPool
+
+  StackCognitoCustomerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: customer
+      Description: Customer users permitted to access explicitly assigned AWS connectors.
+      UserPoolId: !Ref StackCognitoUserPool
+
+  CustomerGroupPostConfirmationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${EnvironmentName}-customer-post-confirmation'
+      CodeUri: src/post_confirmation/
+      Policies:
+        - Statement:
+            - Sid: AssignConfirmedUsersToCustomerGroup
+              Effect: Allow
+              Action:
+                - cognito-idp:AdminAddUserToGroup
+              Resource: !Sub 'arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+      Events:
+        ConfirmedSignup:
+          Type: Cognito
+          Properties:
+            UserPool: !Ref StackCognitoUserPool
+            Trigger: PostConfirmation
+
+  ScansTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-${EnvironmentName}-scans'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: scanId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: scanId
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+
+  ScanAdmissionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${EnvironmentName}-scan-admission'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: scopeKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: scopeKey
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  ConnectorMembershipsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-${EnvironmentName}-connector-memberships'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: requesterRef
+          AttributeType: S
+        - AttributeName: connectorId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: requesterRef
+          KeyType: HASH
+        - AttributeName: connectorId
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+
+  ConnectorsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-${EnvironmentName}-connectors'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connectorId
+          AttributeType: S
+        - AttributeName: managementBucket
+          AttributeType: S
+        - AttributeName: managementSortKey
+          AttributeType: S
+        - AttributeName: statusBucket
+          AttributeType: S
+        - AttributeName: statusSortKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectorId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: management-index
+          KeySchema:
+            - AttributeName: managementBucket
+              KeyType: HASH
+            - AttributeName: managementSortKey
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-index
+          KeySchema:
+            - AttributeName: statusBucket
+              KeyType: HASH
+            - AttributeName: statusSortKey
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: alias/awssecuritytool
+
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-${EnvironmentName}-artifacts-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: ExpireReportsAfter90Days
+            Status: Enabled
+            Prefix: !Ref ReportsPrefix
+            ExpirationInDays: 90
+
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: '$default'
+      CorsConfiguration:
+        AllowOrigins:
+          - !FindInMap [EnvironmentConfig, !Ref EnvironmentName, CorsOrigin]
+        AllowHeaders:
+          - content-type
+          - x-idempotency-key
+          - authorization
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        ExposeHeaders:
+          - retry-after
+        AllowCredentials: false
+      Auth:
+        DefaultAuthorizer: CognitoJwtAuthorizer
+        Authorizers:
+          CognitoJwtAuthorizer:
+            IdentitySource: '$request.header.Authorization'
+            JwtConfiguration:
+              issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${StackCognitoUserPool}'
+              audience:
+                - !Ref StackCognitoUserPoolClient
+
+  HelloFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${EnvironmentName}-hello'
+      CodeUri: src/hello/
+      Events:
+        HealthRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /health
+            Method: GET
+            Auth:
+              Authorizer: NONE
+
+  ScanFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${EnvironmentName}-scan'
+      CodeUri: src/scan/
+      Handler: lifecycle_aware_handler.lambda_handler
+      Environment:
+        Variables:
+          SCANS_TABLE: !Ref ScansTable
+          ADMISSION_TABLE: !Ref ScanAdmissionTable
+          CONNECTOR_MEMBERSHIPS_TABLE: !Ref ConnectorMembershipsTable
+          CONNECTORS_TABLE: !Ref ConnectorsTable
+          APPLICATION_KMS_KEY_ARN: !Ref ApplicationKmsKeyArn
+          ADMISSION_COOLDOWN_SECONDS: !Ref AdmissionCooldownSeconds
+          ADMISSION_LEASE_SECONDS: !Ref AdmissionLeaseSeconds
+          TARGET_ACCOUNT_ID: !Ref AWS::AccountId
+          RUNNER_FUNCTION_NAME: !Ref RunnerFunction
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ScansTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ScanAdmissionTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ConnectorMembershipsTable
+        - Statement:
+            - Sid: ManageConnectorRegistryLifecycle
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt ConnectorsTable.Arn
+            - Sid: ReadConnectorManagementIndex
+              Effect: Allow
+              Action:
+                - dynamodb:Query
+              Resource: !Sub '${ConnectorsTable.Arn}/index/management-index'
+            - Sid: DisableConnectorMembershipsOnRevoke
+              Effect: Allow
+              Action:
+                - dynamodb:UpdateItem
+              Resource: !GetAtt ConnectorMembershipsTable.Arn
+            - Sid: ManageConnectorExternalIdLifecycle
+              Effect: Allow
+              Action:
+                - ssm:PutParameter
+                - ssm:DeleteParameter
+              Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/security-coach/${EnvironmentName}/connectors/*'
+            - Sid: EncryptConnectorExternalIds
+              Effect: Allow
+              Action:
+                - kms:Encrypt
+              Resource: !Ref ApplicationKmsKeyArn
+              Condition:
+                StringEquals:
+                  kms:ViaService:
+                    - !Sub 'ssm.${AWS::Region}.amazonaws.com'
+            - Sid: DecryptConnectorRegistryViaDynamoDb
+              Effect: Allow
+              Action:
+                - kms:Decrypt
+              Resource: !Ref ApplicationKmsKeyArn
+              Condition:
+                StringEquals:
+                  kms:ViaService:
+                    - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+        - LambdaInvokePolicy:
+            FunctionName: !Ref RunnerFunction
+      Events:
+        CreateScanRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/scan
+            Method: POST
+            RouteSettings:
+              DetailedMetricsEnabled: true
+              ThrottlingBurstLimit: 1
+              ThrottlingRateLimit: 0.2
+        ListTargetsRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/targets
+            Method: GET
+        ListConnectorsRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/connectors
+            Method: GET
+        CreateConnectorRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/connectors
+            Method: POST
+        RegisterConnectorRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/connectors/{connectorId}/register
+            Method: POST
+        DisableConnectorRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/connectors/{connectorId}/disable
+            Method: POST
+        EnableConnectorRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/connectors/{connectorId}/enable
+            Method: POST
+        ResetConnectorExternalIdRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/connectors/{connectorId}/reset
+            Method: POST
+        RevokeConnectorRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/connectors/{connectorId}/revoke
+            Method: POST
+
+  ConnectorSetupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${EnvironmentName}-connector-setup'
+      CodeUri: src/scan/
+      Handler: connector_setup.lambda_handler
+      Environment:
+        Variables:
+          CONNECTORS_TABLE: !Ref ConnectorsTable
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          CONNECTOR_RELEASE_BUCKET: !Ref ConnectorReleaseBucketName
+          TRUSTED_SCANNER_ROLE_ARN: !GetAtt RunnerFunctionRole.Arn
+      Policies:
+        - Statement:
+            - Sid: ReadAndAcknowledgeConnectorSetupRecord
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt ConnectorsTable.Arn
+            - Sid: ReadConnectorExternalIdForSetup
+              Effect: Allow
+              Action:
+                - ssm:GetParameter
+              Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/security-coach/${EnvironmentName}/connectors/*'
+            - Sid: DecryptConnectorSetupData
+              Effect: Allow
+              Action:
+                - kms:Decrypt
+              Resource: !Ref ApplicationKmsKeyArn
+              Condition:
+                StringEquals:
+                  kms:ViaService:
+                    - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+                    - !Sub 'ssm.${AWS::Region}.amazonaws.com'
+                    - !Sub 's3.${AWS::Region}.amazonaws.com'
+            - Sid: ReadReleasedConnectorTemplate
+              Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub 'arn:${AWS::Partition}:s3:::${ConnectorReleaseBucketName}/${EnvironmentName}/*'
+      Events:
+        GetConnectorSetupRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/connectors/{connectorId}/setup
+            Method: GET
+        AcknowledgeConnectorSetupRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/connectors/{connectorId}/setup
+            Method: POST
+
+  GetScanFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${EnvironmentName}-get-scan'
+      CodeUri: src/get_scan/
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ScansTable
+      Events:
+        GetScanRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/scan/{scanId}
+            Method: GET
+
+  UpdateScanStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${EnvironmentName}-update-scan-status'
+      CodeUri: src/update_scan_status/
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ScansTable
+      Events:
+        UpdateScanStatusRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/scan/{scanId}/status
+            Method: POST
+
+  GetReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${EnvironmentName}-get-report'
+      CodeUri: src/get_report/
+      Environment:
+        Variables:
+          SCANS_TABLE: !Ref ScansTable
+          ARTIFACTS_BUCKET: !Ref ArtifactsBucket
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ScansTable
+        - S3ReadPolicy:
+            BucketName: !Ref ArtifactsBucket
+      Events:
+        GetReportRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /auth/report/{scanId}
+            Method: GET
+
+  RunnerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${EnvironmentName}-runner'
+      CodeUri: src/runner/
+      Handler: v1_handler.lambda_handler
+      Timeout: 60
+      ReservedConcurrentExecutions: 1
+      Environment:
+        Variables:
+          SCANS_TABLE: !Ref ScansTable
+          ARTIFACTS_BUCKET: !Ref ArtifactsBucket
+          RULES_PREFIX: !Ref RulesPrefix
+          REPORTS_PREFIX: !Ref ReportsPrefix
+          HOME_REGION: !Ref HomeRegion
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          CONNECTORS_TABLE: !Ref ConnectorsTable
+      Policies:
+        - Statement:
+            - Sid: ReadAndUpdateScanLifecycle
+              Effect: Allow
+              Action:
+                - dynamodb:Scan
+                - dynamodb:UpdateItem
+              Resource: !GetAtt ScansTable.Arn
+            - Sid: ReadConnectorRegistry
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+              Resource: !GetAtt ConnectorsTable.Arn
+            - Sid: DiscoverRuleObjects
+              Effect: Allow
+              Action:
+                - s3:ListBucket
+              Resource: !GetAtt ArtifactsBucket.Arn
+              Condition:
+                StringLike:
+                  s3:prefix:
+                    - !Sub '${RulesPrefix}*'
+            - Sid: WriteReports
+              Effect: Allow
+              Action:
+                - s3:PutObject
+              Resource: !Sub '${ArtifactsBucket.Arn}/${ReportsPrefix}*'
+            - Sid: ReadToolAccountPosture
+              Effect: Allow
+              Action:
+                - iam:GenerateCredentialReport
+                - iam:GetCredentialReport
+                - iam:GetAccountSummary
+                - iam:ListUsers
+                - iam:ListMFADevices
+                - iam:GetAccountPasswordPolicy
+                - cloudtrail:DescribeTrails
+                - s3:GetAccountPublicAccessBlock
+              Resource: '*'
+            - Sid: ReadHomeRegionSecurityGroups
+              Effect: Allow
+              Action:
+                - ec2:DescribeSecurityGroups
+              Resource: '*'
+            - Sid: ReadConnectorExternalIds
+              Effect: Allow
+              Action:
+                - ssm:GetParameter
+              Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/security-coach/${EnvironmentName}/connectors/*'
+            - Sid: DecryptConnectorData
+              Effect: Allow
+              Action:
+                - kms:Decrypt
+              Resource: !Ref ApplicationKmsKeyArn
+              Condition:
+                StringEquals:
+                  kms:ViaService:
+                    - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+                    - !Sub 'ssm.${AWS::Region}.amazonaws.com'
+            - Sid: AssumeManagedSecurityCoachConnectors
+              Effect: Allow
+              Action:
+                - sts:AssumeRole
+              Resource: !Sub 'arn:${AWS::Partition}:iam::*:role/aws-security-coach/*'
+              Condition:
+                StringEquals:
+                  iam:ResourceTag/AWSSecurityCoachConnector: 'true'
+
+  RunnerSweeperSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub '${ProjectName}-${EnvironmentName}-runner-sweeper'
+      Description: Invokes the runner periodically to process queued scans and clean stale running scans.
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Target:
+        Arn: !GetAtt RunnerFunction.Arn
+        RoleArn: !GetAtt RunnerSweeperRole.Arn
+        Input: '{}'
+
+  RunnerSweeperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${EnvironmentName}-runner-sweeper-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeRunner
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !GetAtt RunnerFunction.Arn
+
+Outputs:
+  CognitoUserPoolId:
+    Description: Cognito user pool managed by this stack.
+    Value: !Ref StackCognitoUserPool
+
+  CognitoUserPoolClientId:
+    Description: Public browser app-client ID.
+    Value: !Ref StackCognitoUserPoolClient
+
+  CognitoIssuer:
+    Description: JWT issuer trusted by API Gateway.
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${StackCognitoUserPool}'
+
+  CognitoDomain:
+    Description: Cognito managed-login domain.
+    Value: !Sub 'https://${StackCognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+
+  CognitoCallbackUrl:
+    Value: !FindInMap [EnvironmentConfig, !Ref EnvironmentName, CallbackUrl]
+
+  CognitoLogoutUrl:
+    Value: !FindInMap [EnvironmentConfig, !Ref EnvironmentName, LogoutUrl]
+
+  ApiId:
+    Description: HTTP API id created by this stack.
+    Value: !Ref Api
+
+  ApiEndpoint:
+    Description: HTTP API endpoint created by this stack.
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com'
+
+  ScansTableName:
+    Description: Scans table name.
+    Value: !Ref ScansTable
+
+  ScanAdmissionTableName:
+    Description: Scan admission-control table name.
+    Value: !Ref ScanAdmissionTable
+
+  ConnectorMembershipsTableName:
+    Description: Application-owned requester-to-connector authorization table.
+    Value: !Ref ConnectorMembershipsTable
+
+  ConnectorsTableName:
+    Description: Connector management-plane registry table.
+    Value: !Ref ConnectorsTable
+
+  ArtifactsBucketName:
+    Description: Artifacts bucket name.
+    Value: !Ref ArtifactsBucket
+
+  RunnerFunctionName:
+    Value: !Ref RunnerFunction
+
+  ScanFunctionName:
+    Value: !Ref ScanFunction

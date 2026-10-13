@@ -1,0 +1,139 @@
+name: Deploy Connector Release Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Connector release infrastructure target environment
+        required: true
+        type: choice
+        default: dev
+        options:
+          - dev
+          - prod
+      action:
+        description: Choose validate to lint only, or deploy to create/update connector release infrastructure
+        required: true
+        default: validate
+        type: choice
+        options:
+          - validate
+          - deploy
+  pull_request:
+    paths:
+      - "infra/connector-releases/**"
+      - ".github/workflows/deploy-connector-release-infra.yml"
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - "infra/connector-releases/**"
+      - ".github/workflows/deploy-connector-release-infra.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint connector release infrastructure
+        run: cfn-lint infra/connector-releases/template.yaml
+
+  deploy:
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy') }}
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ ((github.event_name == 'workflow_dispatch' && inputs.target_environment == 'prod') || (github.event_name == 'push' && github.ref_name == 'main')) && 'production' || 'development' }}
+    env:
+      TARGET_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || (github.ref_name == 'main' && 'prod' || 'dev') }}
+    steps:
+      - name: Require matching branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$TARGET_ENVIRONMENT" == "dev" ]]; then
+            test "${{ github.ref_name }}" = "dev" || {
+              echo "Development connector release infrastructure must deploy from dev."
+              exit 1
+            }
+          else
+            test "${{ github.ref_name }}" = "main" || {
+              echo "Production connector release infrastructure must deploy from main."
+              exit 1
+            }
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate connector release infrastructure role configuration
+        shell: bash
+        env:
+          CONNECTOR_RELEASE_INFRA_AWS_ROLE_ARN: ${{ vars.CONNECTOR_RELEASE_INFRA_AWS_ROLE_ARN }}
+        run: |
+          test -n "$CONNECTOR_RELEASE_INFRA_AWS_ROLE_ARN" || {
+            echo "CONNECTOR_RELEASE_INFRA_AWS_ROLE_ARN is required in the selected GitHub Environment."
+            exit 1
+          }
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.CONNECTOR_RELEASE_INFRA_AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Deploy connector release stack
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$TARGET_ENVIRONMENT" == "dev" ]]; then
+            STACK_NAME="aws-security-coach-connector-releases-example"
+          else
+            STACK_NAME="aws-security-coach-connector-releases-example-prod"
+          fi
+
+          aws cloudformation deploy \
+            --template-file infra/connector-releases/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --parameter-overrides \
+              EnvironmentName="$TARGET_ENVIRONMENT" \
+              GitHubRepository="$GITHUB_REPOSITORY" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --tags \
+              Project=AWSSafetyCoach \
+              AccountRole=Tool \
+              Environment="$TARGET_ENVIRONMENT" \
+              Owner=PortfolioUser \
+              ManagedBy=CloudFormation \
+              Provisioned=IaC \
+              Purpose=ConnectorReleaseDistribution
+
+      - name: Show stack outputs
+        shell: bash
+        run: |
+          if [[ "$TARGET_ENVIRONMENT" == "dev" ]]; then
+            STACK_NAME="aws-security-coach-connector-releases-example"
+          else
+            STACK_NAME="aws-security-coach-connector-releases-example-prod"
+          fi
+
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs" \
+            --output table
